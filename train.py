@@ -24,11 +24,12 @@ parser.add_argument('--max_epochs', type=int,
                     default=150, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int,
                     default=24, help='batch_size per gpu')
-parser.add_argument('--n_gpu', type=int, default=1, help='total gpu')
-parser.add_argument('--deterministic', type=int,  default=1,
-                    help='whether use deterministic training')
-parser.add_argument('--base_lr', type=float,  default=0.01,
-                    help='segmentation network learning rate')
+parser.add_argument('--n_gpu', type=int, 
+                    default=1, help='total gpu')
+parser.add_argument('--deterministic', type=int,  
+                    default=1, help='whether use deterministic training')
+parser.add_argument('--base_lr', type=float,  
+                    default=0.01, help='segmentation network learning rate')
 parser.add_argument('--img_size', type=int,
                     default=224, help='input patch size of network input')
 parser.add_argument('--seed', type=int,
@@ -39,6 +40,8 @@ parser.add_argument('--vit_name', type=str,
                     default='R50+ViT-B_16', help='select one vit model')
 parser.add_argument('--vit_patches_size', type=int,
                     default=16, help='vit_patches_size, default is 16')
+parser.add_argument('--continue_from_epoch', type=int,
+                    default=0, help='continue training from epoch number')
 args = parser.parse_args()
 
 
@@ -50,6 +53,7 @@ if __name__ == "__main__":
         cudnn.benchmark = False
         cudnn.deterministic = True
 
+    # Load dataset
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -81,6 +85,7 @@ if __name__ == "__main__":
     snapshot_path = snapshot_path + '_'+str(args.img_size)
     snapshot_path = snapshot_path + '_s'+str(args.seed) if args.seed!=1234 else snapshot_path
 
+    # Configure the model
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     config_vit = CONFIGS_ViT_seg[args.vit_name]
@@ -89,7 +94,14 @@ if __name__ == "__main__":
     if args.vit_name.find('R50') != -1:
         config_vit.patches.grid = (int(args.img_size / args.vit_patches_size), int(args.img_size / args.vit_patches_size))
     net = ViT_seg(config_vit, img_size=args.img_size, num_classes=config_vit.n_classes).cuda()
-    net.load_from(weights=np.load(config_vit.pretrained_path))
 
+    # Load model or pre-trained model
+    if (args.continue_from_epoch > 0):
+        snapshot = os.path.join(snapshot_path, 'epoch_'+str(args.continue_from_epoch))
+        net.load_state_dict(torch.load(snapshot))
+    else:
+        net.load_from(weights=np.load(config_vit.pretrained_path))
+    
+    # Start training using trainer
     trainer = {'Synapse': trainer_synapse,}
     trainer[dataset_name](args, net, snapshot_path)
