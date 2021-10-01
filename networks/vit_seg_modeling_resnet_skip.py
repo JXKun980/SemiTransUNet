@@ -2,6 +2,7 @@ import math
 
 from os.path import join as pjoin
 from collections import OrderedDict
+from typing import ForwardRef
 
 import torch
 import torch.nn as nn
@@ -33,6 +34,61 @@ def conv3x3(cin, cout, stride=1, groups=1, bias=False):
 def conv1x1(cin, cout, stride=1, bias=False):
     return StdConv2d(cin, cout, kernel_size=1, stride=stride,
                      padding=0, bias=bias)
+
+
+class JigsawClassifier(nn.Module):
+    def __init__(self, num_classes: int, channel_size: int, img_size: int):
+        super(JigsawClassifier, self).__init__()
+        self.num_classes = num_classes
+        self.channel_size = channel_size
+        self.img_size = img_size
+        self.input_size = channel_size * img_size * img_size
+
+        self.fc = nn.Sequential()
+        self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 2))
+        self.fc.add_module('relu1', nn.ReLU(inplace=True))
+        self.fc.add_module('drop1', nn.Dropout(p=0.5))
+
+        self.fc.add_module('fc2', nn.Linear(self.input_size // 2, self.input_size // 4))
+        self.fc.add_module('relu2', nn.ReLU(inplace=True))
+        self.fc.add_module('drop2', nn.Dropout(p=0.5))
+
+        self.fc.add_module('fc3', nn.Linear(self.input_size // 4, self.input_size // 8))
+        self.fc.add_module('relu3', nn.ReLU(inplace=True))
+        self.fc.add_module('drop3', nn.Dropout(p=0.5))
+
+        self.fc.add_module('fc4', nn.Linear(self.input_size // 8, self.input_size // 16))
+        self.fc.add_module('relu4', nn.ReLU(inplace=True))
+        self.fc.add_module('drop4', nn.Dropout(p=0.5))
+
+        self.fc.add_module('fc5', nn.Linear(self.input_size // 16, 4096)) # Assuming input_size // 16 is close to 4096, in this case 6012
+        self.fc.add_module('relu5', nn.ReLU(inplace=True))
+        self.fc.add_module('drop5', nn.Dropout(p=0.5))
+
+        self.classifier = nn.Sequential()
+        self.classifier.add_module('fc6', nn.Linear(4096, self.num_classes)) # Similar approach as original paper
+
+        self._init_weights()
+
+    def _init_weights(self):
+        nn.init.xavier_uniform_(self.fc1.weight)
+        nn.init.xavier_uniform_(self.fc2.weight)
+        nn.init.xavier_uniform_(self.fc3.weight)
+        nn.init.xavier_uniform_(self.fc4.weight)
+        nn.init.xavier_uniform_(self.fc5.weight)
+        nn.init.xavier_uniform_(self.fc6.weight)
+        nn.init.normal_(self.fc1.bias, std=1e-6)
+        nn.init.normal_(self.fc2.bias, std=1e-6)
+        nn.init.normal_(self.fc3.bias, std=1e-6)
+        nn.init.normal_(self.fc4.bias, std=1e-6)
+        nn.init.normal_(self.fc5.bias, std=1e-6)
+        nn.init.normal_(self.fc6.bias, std=1e-6)
+
+    def forward(self, x):
+        x = self.fc(x)
+        x = self.classifier(x)
+
+        return x
 
 
 class PreActBottleneck(nn.Module):
@@ -109,12 +165,13 @@ class PreActBottleneck(nn.Module):
             self.gn_proj.weight.copy_(proj_gn_weight.view(-1))
             self.gn_proj.bias.copy_(proj_gn_bias.view(-1))
 
+
 class ResNetV2(nn.Module):
     """Implementation of Pre-activation (v2) ResNet mode."""
 
-    def __init__(self, block_units, width_factor):
+    def __init__(self, block_units, base_width, width_factor):
         super().__init__()
-        width = int(64 * width_factor)
+        width = int(base_width * width_factor)
         self.width = width
 
         self.root = nn.Sequential(OrderedDict([
@@ -145,7 +202,7 @@ class ResNetV2(nn.Module):
         x = self.root(x)
         features.append(x)
         x = nn.MaxPool2d(kernel_size=3, stride=2, padding=0)(x)
-        for i in range(len(self.body)-1):
+        for i in range( (self.body)-1):
             x = self.body[i](x)
             right_size = int(in_size / 4 / (i+1))
             if x.size()[2] != right_size:
@@ -158,3 +215,34 @@ class ResNetV2(nn.Module):
             features.append(feat)
         x = self.body[-1](x)
         return x, features[::-1]
+
+    def load_from(self, weights):
+        self.root.conv.weight.copy_(np2th(weights["conv_root/kernel"], conv=True))
+        gn_weight = np2th(weights["gn_root/scale"]).view(-1)
+        gn_bias = np2th(weights["gn_root/bias"]).view(-1)
+        self.root.gn.weight.copy_(gn_weight)
+        self.root.gn.bias.copy_(gn_bias)
+
+        for bname, block in self.body.named_children():
+            for uname, unit in block.named_children():
+                unit.load_from(weights, n_block=bname, n_unit=uname)
+
+
+class Jigsaw_ResNetV2(nn.Module):
+    def __init__(self, config, img_size: int):
+        super().__init__()
+        self.Q = config.selfloop.Q
+        self.K = config.selfloop.K
+
+        self.res_net = ResNetV2(block_units=config.resnet.num_layers, width_factor=config.resnet.width_factor)
+        self.jigsaw_classifier = JigsawClassifier(num_classes=100, channel_size=self.res_net.width, img_size=img_size/16)
+            # hard coded class and img size, img size tested from ResNet outputs, not from calculation
+
+    def forward(self, x):
+        resnet_x, features = self.res_net(x)
+        jigsaw_x = self.jigsaw_classifier(resnet_x)
+        return jigsaw_x, resnet_x, features
+
+    def load_from(self, weights):
+        # Set weights for ResNet if pre-trained path is present
+        self.res_net.load_from(weights)

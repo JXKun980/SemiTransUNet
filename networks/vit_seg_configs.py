@@ -46,6 +46,7 @@ def get_r50_b16_config():
     config.resnet = ml_collections.ConfigDict()
     config.resnet.num_layers = (3, 4, 9)
     config.resnet.width_factor = 1
+    config.resnet.base_width = 64
 
     config.classifier = 'seg'
     config.pretrained_path = '../model/vit_checkpoint/imagenet21k/R50+ViT-B_16.npz'
@@ -96,9 +97,10 @@ def get_r50_l16_config():
     config.resnet = ml_collections.ConfigDict()
     config.resnet.num_layers = (3, 4, 9)
     config.resnet.width_factor = 1
+    config.resnet.base_width = 64
+    config.resnet_pretrained_path = '../model/vit_checkpoint/imagenet21k/R50+ViT-B_16.npz'
 
     config.classifier = 'seg'
-    config.resnet_pretrained_path = '../model/vit_checkpoint/imagenet21k/R50+ViT-B_16.npz'
     config.decoder_channels = (256, 128, 64, 16)
     config.skip_channels = [512, 256, 64, 16]
     config.n_classes = 2
@@ -126,5 +128,30 @@ def get_h14_config():
     config.transformer.dropout_rate = 0.1
     config.classifier = 'token'
     config.representation_size = None
+
+    return config
+
+def get_r50_b16_selfloop_config():
+    """Returns the Resnet50 + ViT-B/16 + Self-loop uncertenty semi-supervised learning configuration."""
+    config = get_b16_config()
+
+    config.patches.grid = (16, 16)
+    config.resnet = ml_collections.ConfigDict()
+    config.resnet.num_layers = (3, 4, 9)
+    config.resnet.width_factor = 1
+    config.resnet.base_width = 64
+
+    config.selfloop_enabled = True
+    config.selfloop = ml_collections.ConfigDict()
+    config.selfloop.K = 100
+    config.selfloop.Q = 10
+
+    config.classifier = 'seg'
+    config.pretrained_path = '../model/vit_checkpoint/imagenet21k/R50+ViT-B_16.npz'
+    config.decoder_channels = (256, 128, 64, 16)
+    config.skip_channels = [512, 256, 64, 16]
+    config.n_classes = 2
+    config.n_skip = 3
+    config.activation = 'softmax'
 
     return config
