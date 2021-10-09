@@ -57,23 +57,26 @@ class JigsawTransformation(object):
     def __call__(self, sample):
         image = sample['image']
 
-        if image.size[0] != self.output_size:
-            image = transforms.Resize((self.output_size, self.output_size))(image)
+        if image.size()[1] != self.output_size:
+            image = image.unsqueeze(0)
+            image = torch.nn.functional.interpolate(image, size=(self.output_size,self.output_size), mode='bilinear', align_corners=False) # Use of align corners, why?
+            image = image.squeeze(0)
+            # image = transforms.Resize((self.output_size, self.output_size))(image) # somehow not working with Tensor, but need a PIL image
 
-        jigsaw_images = np.zeros((self.Q, self.output_size, self.output_size))
+        jigsaw_images = np.zeros((self.Q, image.size()[0], image.size()[1], image.size()[2]))
         jigsaw_labels = np.zeros((self.Q, 1))
-        piece_size = float(image.size[0]) / 3
+        piece_size = image.size()[1] // 3
 
         for q in range(self.Q):
             perm_index = np.random.randint(len(self.permutations))
             permutation = self.permutations[perm_index]
             for n in range(9):
-                i_start = n / 3 * piece_size
+                i_start = n // 3 * piece_size
                 j_start = n % 3 * piece_size
-                i_start_new = permutation[n] / 3 * piece_size
+                i_start_new = permutation[n] // 3 * piece_size
                 j_start_new = permutation[n] % 3 * piece_size
-                jigsaw_images[q, i_start_new : i_start_new + piece_size, j_start_new : j_start_new + piece_size] = \
-                    image[i_start : i_start + piece_size, j_start : j_start + piece_size]
+                jigsaw_images[q, :, i_start_new : i_start_new + piece_size, j_start_new : j_start_new + piece_size] = \
+                    image[:, i_start : i_start + piece_size, j_start : j_start + piece_size]
             jigsaw_labels[q] = perm_index
 
         sample['jigsaw_images'] = jigsaw_images
@@ -81,7 +84,7 @@ class JigsawTransformation(object):
         return sample
 
     def __retrive_permutations(self, classes):
-        all_perm = np.load('permutations_%d.npy' % (classes))
+        all_perm = np.load('permutations_hamming_max_%d.npy' % (classes))
         # from range [1,9] to [0,8]
         if all_perm.min() == 1:
             all_perm = all_perm - 1

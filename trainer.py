@@ -49,6 +49,8 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
                              worker_init_fn=worker_init_fn)
     
     # Set up training model and losses
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    
     if args.n_gpu > 1:
         model_main = nn.DataParallel(model_main)
         model_semisupervised = nn.DataParallel(model_semisupervised)
@@ -59,7 +61,7 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
     # Set up training variables
     ce_loss = CrossEntropyLoss()
     dice_loss = DiceLoss(num_classes)
-    optimizer_overall = optim.SGD([model_main.parameters(), model_semisupervised.parameters()], lr=base_lr, momentum=0.9, weight_decay=0.0001)
+    optimizer_overall = optim.SGD(list(model_main.parameters()) + list(model_semisupervised.parameters()), lr=base_lr, momentum=0.9, weight_decay=0.0001)
     # optimizer_jigsaw = optim.SGD(model_semisupervised.parameters(), lr=base_lr, momentum=0.9, weight_decay = 5e-4)
 
     iter_num = 0
@@ -81,13 +83,13 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
             unlabelled = False
 
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
-            image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
+            image_batch, label_batch = image_batch.to(device=device, dtype=torch.float), label_batch.to(device=device, dtype=torch.float)
             image_batch_jigsaw, label_batch_jigsaw = sampled_batch['jigsaw_images'], sampled_batch['jigsaw_labels']
-            image_batch_jigsaw, label_batch_jigsaw = image_batch_jigsaw.cuda(), label_batch_jigsaw.cuda()
+            image_batch_jigsaw, label_batch_jigsaw = image_batch_jigsaw.to(device=device, dtype=torch.float), label_batch_jigsaw.to(device=device, dtype=torch.long)
             # TODO: test image jigsawlization
 
-            image_batch_jigsaw.transpose(0, 1) # B, Q, ... -> Q, B，...
-            label_batch_jigsaw.transpose(0, 1)
+            image_batch_jigsaw = image_batch_jigsaw.transpose(0, 1) # B, Q, ... -> Q, B，...
+            label_batch_jigsaw = label_batch_jigsaw.transpose(0, 1)
 
             # Jigsaw classification task for Q different transformations
             if unlabelled:
@@ -102,7 +104,9 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
                 loss_jigsaw_total = 0
                 for q in range(model_semisupervised.Q):
                     jigsaw_classificaiton_outputs, resnet_outputs, features = model_semisupervised(image_batch_jigsaw[q])
-                    loss_jigsaw = ce_loss(jigsaw_classificaiton_outputs, label_batch_jigsaw[q])
+                    print(f"\n\n jigsaw out size: {jigsaw_classificaiton_outputs.size()} type {jigsaw_classificaiton_outputs.type()} \n\n")
+                    print(f"\n\n label[q] size: {label_batch_jigsaw[q].size()} type {label_batch_jigsaw[q].type()} \n\n")
+                    loss_jigsaw = ce_loss(jigsaw_classificaiton_outputs, label_batch_jigsaw[q].flatten())
                     loss_jigsaw_total += loss_jigsaw
                 optimizer_overall.zero_grad()
                 loss_jigsaw_total.backward()

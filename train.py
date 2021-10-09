@@ -89,6 +89,8 @@ if __name__ == "__main__":
     snapshot_path = snapshot_path + '_s'+str(args.seed) if args.seed!=1234 else snapshot_path
 
     # Configure the model
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     config_vit = CONFIGS_ViT_seg[args.vit_name]
@@ -100,8 +102,8 @@ if __name__ == "__main__":
     else:
         raise Exception("This code is for semi-supervised only, wrong model selected.")
 
-    net_jigsaw_resnet = Jigsaw_ResNetV2(config_vit, img_size=args.img_size)
-    net_vit = ViT_seg(config_vit, img_size=args.img_size, num_classes=config_vit.n_classes).cuda()
+    net_jigsaw_resnet = Jigsaw_ResNetV2(config_vit, img_size=args.img_size).to(device)
+    net_vit = ViT_seg(config_vit, img_size=args.img_size, num_classes=config_vit.n_classes).to(device)
 
     # Load model or pre-trained model
     if (args.continue_from_epoch > 0):

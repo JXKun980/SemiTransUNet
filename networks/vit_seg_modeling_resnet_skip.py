@@ -42,49 +42,44 @@ class JigsawClassifier(nn.Module):
         self.num_classes = num_classes
         self.channel_size = channel_size
         self.img_size = img_size
-        self.input_size = channel_size * img_size * img_size
 
+        self.conv = nn.Conv2d(channel_size, channel_size // 4, 1, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+
+        self.input_size = int(channel_size // 4 * img_size * img_size)
         self.fc = nn.Sequential()
-        self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 2))
+        self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 4))
         self.fc.add_module('relu1', nn.ReLU(inplace=True))
         self.fc.add_module('drop1', nn.Dropout(p=0.5))
 
-        self.fc.add_module('fc2', nn.Linear(self.input_size // 2, self.input_size // 4))
-        self.fc.add_module('relu2', nn.ReLU(inplace=True))
-        self.fc.add_module('drop2', nn.Dropout(p=0.5))
+        # self.fc.add_module('fc2', nn.Linear(self.input_size // 2, self.input_size // 4))
+        # self.fc.add_module('relu2', nn.ReLU(inplace=True))
+        # self.fc.add_module('drop2', nn.Dropout(p=0.5))
 
         self.fc.add_module('fc3', nn.Linear(self.input_size // 4, self.input_size // 8))
         self.fc.add_module('relu3', nn.ReLU(inplace=True))
         self.fc.add_module('drop3', nn.Dropout(p=0.5))
 
-        self.fc.add_module('fc4', nn.Linear(self.input_size // 8, self.input_size // 16))
-        self.fc.add_module('relu4', nn.ReLU(inplace=True))
-        self.fc.add_module('drop4', nn.Dropout(p=0.5))
+        # self.fc.add_module('fc4', nn.Linear(self.input_size // 8, self.input_size // 16))
+        # self.fc.add_module('relu4', nn.ReLU(inplace=True))
+        # self.fc.add_module('drop4', nn.Dropout(p=0.5))
 
-        self.fc.add_module('fc5', nn.Linear(self.input_size // 16, 4096)) # Assuming input_size // 16 is close to 4096, in this case 6012
+        self.fc.add_module('fc5', nn.Linear(self.input_size // 8, 4096)) # Assuming input_size // 16 is close to 4096, in this case 6012
         self.fc.add_module('relu5', nn.ReLU(inplace=True))
         self.fc.add_module('drop5', nn.Dropout(p=0.5))
 
         self.classifier = nn.Sequential()
         self.classifier.add_module('fc6', nn.Linear(4096, self.num_classes)) # Similar approach as original paper
 
-        self._init_weights()
+        self.fc.apply(self._init_weights)
 
-    def _init_weights(self):
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.xavier_uniform_(self.fc2.weight)
-        nn.init.xavier_uniform_(self.fc3.weight)
-        nn.init.xavier_uniform_(self.fc4.weight)
-        nn.init.xavier_uniform_(self.fc5.weight)
-        nn.init.xavier_uniform_(self.fc6.weight)
-        nn.init.normal_(self.fc1.bias, std=1e-6)
-        nn.init.normal_(self.fc2.bias, std=1e-6)
-        nn.init.normal_(self.fc3.bias, std=1e-6)
-        nn.init.normal_(self.fc4.bias, std=1e-6)
-        nn.init.normal_(self.fc5.bias, std=1e-6)
-        nn.init.normal_(self.fc6.bias, std=1e-6)
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            nn.init.normal_(m.bias, std=1e-6)
 
     def forward(self, x):
+        x = self.conv(x)
+        x = x.flatten(1)
         x = self.fc(x)
         x = self.classifier(x)
 
@@ -197,12 +192,14 @@ class ResNetV2(nn.Module):
         ]))
 
     def forward(self, x):
+        if x.size()[1] == 1:
+              x = x.repeat(1,3,1,1)
         features = []
         b, c, in_size, _ = x.size()
         x = self.root(x)
         features.append(x)
         x = nn.MaxPool2d(kernel_size=3, stride=2, padding=0)(x)
-        for i in range( (self.body)-1):
+        for i in range(len(self.body)-1):
             x = self.body[i](x)
             right_size = int(in_size / 4 / (i+1))
             if x.size()[2] != right_size:
@@ -234,15 +231,17 @@ class Jigsaw_ResNetV2(nn.Module):
         self.Q = config.selfloop.Q
         self.K = config.selfloop.K
 
-        self.res_net = ResNetV2(block_units=config.resnet.num_layers, width_factor=config.resnet.width_factor)
-        self.jigsaw_classifier = JigsawClassifier(num_classes=100, channel_size=self.res_net.width, img_size=img_size/16)
+        self.res_net = ResNetV2(block_units=config.resnet.num_layers, base_width=64, width_factor=config.resnet.width_factor)
+        self.jigsaw_classifier = JigsawClassifier(num_classes=100, channel_size=self.res_net.width * 16, img_size=img_size/16)
             # hard coded class and img size, img size tested from ResNet outputs, not from calculation
 
     def forward(self, x):
         resnet_x, features = self.res_net(x)
+
         jigsaw_x = self.jigsaw_classifier(resnet_x)
         return jigsaw_x, resnet_x, features
 
     def load_from(self, weights):
-        # Set weights for ResNet if pre-trained path is present
-        self.res_net.load_from(weights)
+        with torch.no_grad():
+            # Set weights for ResNet if pre-trained path is present
+            self.res_net.load_from(weights)
