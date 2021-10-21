@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from utils import DiceLoss
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snapshot_path):
     
@@ -84,6 +85,11 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
 
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
             image_batch, label_batch = image_batch.to(device=device, dtype=torch.float), label_batch.to(device=device, dtype=torch.float)
+            
+            for img in image_batch:
+                plt.imshow(img.to(device="cpu").permute(1, 2, 0))
+                input()
+
             image_batch_jigsaw, label_batch_jigsaw = sampled_batch['jigsaw_images'], sampled_batch['jigsaw_labels']
             image_batch_jigsaw, label_batch_jigsaw = image_batch_jigsaw.to(device=device, dtype=torch.float), label_batch_jigsaw.to(device=device, dtype=torch.long)
             # TODO: test image jigsawlization
@@ -104,8 +110,8 @@ def trainer_synapse_semisupervised(args, model_semisupervised, model_main, snaps
                 loss_jigsaw_total = 0
                 for q in range(model_semisupervised.Q):
                     jigsaw_classificaiton_outputs, resnet_outputs, features = model_semisupervised(image_batch_jigsaw[q])
-                    print(f"\n\n jigsaw out size: {jigsaw_classificaiton_outputs.size()} type {jigsaw_classificaiton_outputs.type()} \n\n")
-                    print(f"\n\n label[q] size: {label_batch_jigsaw[q].size()} type {label_batch_jigsaw[q].type()} \n\n")
+                    # print(f"\n\n jigsaw out size: {jigsaw_classificaiton_outputs.size()} type {jigsaw_classificaiton_outputs.type()} \n\n")
+                    # print(f"\n\n label[q] size: {label_batch_jigsaw[q].size()} type {label_batch_jigsaw[q].type()} \n\n")
                     loss_jigsaw = ce_loss(jigsaw_classificaiton_outputs, label_batch_jigsaw[q].flatten())
                     loss_jigsaw_total += loss_jigsaw
                 optimizer_overall.zero_grad()

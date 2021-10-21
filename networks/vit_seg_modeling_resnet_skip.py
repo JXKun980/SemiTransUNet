@@ -43,27 +43,30 @@ class JigsawClassifier(nn.Module):
         self.channel_size = channel_size
         self.img_size = img_size
 
-        self.conv = nn.Conv2d(channel_size, channel_size // 4, 1, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+        self.conv = nn.Conv2d(channel_size, channel_size // 32, 1, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
 
-        self.input_size = int(channel_size // 4 * img_size * img_size)
+        self.input_size = int(channel_size // 32 * img_size * img_size)
+
+        print(f'Input size {self.input_size} channel size {channel_size} image size {img_size}')
+
         self.fc = nn.Sequential()
-        self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 4))
-        self.fc.add_module('relu1', nn.ReLU(inplace=True))
-        self.fc.add_module('drop1', nn.Dropout(p=0.5))
+        # self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 16))
+        # self.fc.add_module('relu1', nn.ReLU(inplace=True))
+        # self.fc.add_module('drop1', nn.Dropout(p=0.5))
 
         # self.fc.add_module('fc2', nn.Linear(self.input_size // 2, self.input_size // 4))
         # self.fc.add_module('relu2', nn.ReLU(inplace=True))
         # self.fc.add_module('drop2', nn.Dropout(p=0.5))
 
-        self.fc.add_module('fc3', nn.Linear(self.input_size // 4, self.input_size // 8))
-        self.fc.add_module('relu3', nn.ReLU(inplace=True))
-        self.fc.add_module('drop3', nn.Dropout(p=0.5))
+        # self.fc.add_module('fc3', nn.Linear(self.input_size // 4, self.input_size // 8))
+        # self.fc.add_module('relu3', nn.ReLU(inplace=True))
+        # self.fc.add_module('drop3', nn.Dropout(p=0.5))
 
         # self.fc.add_module('fc4', nn.Linear(self.input_size // 8, self.input_size // 16))
         # self.fc.add_module('relu4', nn.ReLU(inplace=True))
         # self.fc.add_module('drop4', nn.Dropout(p=0.5))
 
-        self.fc.add_module('fc5', nn.Linear(self.input_size // 8, 4096)) # Assuming input_size // 16 is close to 4096, in this case 6012
+        self.fc.add_module('fc5', nn.Linear(self.input_size, 4096)) # Assuming input_size // 16 is close to 4096, in this case 6012
         self.fc.add_module('relu5', nn.ReLU(inplace=True))
         self.fc.add_module('drop5', nn.Dropout(p=0.5))
 
@@ -71,6 +74,7 @@ class JigsawClassifier(nn.Module):
         self.classifier.add_module('fc6', nn.Linear(4096, self.num_classes)) # Similar approach as original paper
 
         self.fc.apply(self._init_weights)
+        self.classifier.apply(self._init_weights)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
