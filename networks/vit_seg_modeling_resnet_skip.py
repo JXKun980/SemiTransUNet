@@ -43,11 +43,11 @@ class JigsawClassifier(nn.Module):
         self.channel_size = channel_size
         self.img_size = img_size
 
-        self.conv = nn.Conv2d(channel_size, channel_size // 32, 1, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+        self.conv = nn.Conv2d(channel_size, channel_size // 8, 1, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
 
-        self.input_size = int(channel_size // 32 * img_size * img_size)
+        self.input_size = int(channel_size // 8 * img_size * img_size)
 
-        print(f'Input size {self.input_size} channel size {channel_size} image size {img_size}')
+        # print(f'Input size {self.input_size} channel size {channel_size} image size {img_size}')
 
         self.fc = nn.Sequential()
         # self.fc.add_module('fc1', nn.Linear(self.input_size, self.input_size // 16))
@@ -72,6 +72,7 @@ class JigsawClassifier(nn.Module):
 
         self.classifier = nn.Sequential()
         self.classifier.add_module('fc6', nn.Linear(4096, self.num_classes)) # Similar approach as original paper
+        self.classifier.add_module('softmax', nn.Softmax(dim=1))
 
         self.fc.apply(self._init_weights)
         self.classifier.apply(self._init_weights)
@@ -249,3 +250,6 @@ class Jigsaw_ResNetV2(nn.Module):
         with torch.no_grad():
             # Set weights for ResNet if pre-trained path is present
             self.res_net.load_from(weights)
+
+def jigsaw_softmax(q, losses):
+    return 1 - losses[q] / (sum(losses))

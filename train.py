@@ -118,3 +118,5 @@ if __name__ == "__main__":
     # Start training using trainer
     trainer = {'Synapse': trainer_synapse_semisupervised,}
     trainer[dataset_name](args, net_jigsaw_resnet, net_vit, snapshot_path)
+
+    # Example calls: python train.py --vit_name R50-ViT-B_16-selfloop --batch_size 3

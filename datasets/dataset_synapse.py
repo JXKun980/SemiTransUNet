@@ -59,7 +59,7 @@ class JigsawTransformation(object):
 
         if image.size()[1] != self.output_size:
             image = image.unsqueeze(0)
-            image = torch.nn.functional.interpolate(image, size=(self.output_size,self.output_size), mode='bilinear', align_corners=False) # Use of align corners, why?
+            image = torch.nn.functional.interpolate(image, size=(self.output_size,self.output_size), mode='bilinear', align_corners=False) # TODO: Use of align corners, why?
             image = image.squeeze(0)
             # image = transforms.Resize((self.output_size, self.output_size))(image) # somehow not working with Tensor, but need a PIL image
 
@@ -88,8 +88,26 @@ class JigsawTransformation(object):
         # from range [1,9] to [0,8]
         if all_perm.min() == 1:
             all_perm = all_perm - 1
-
         return all_perm
+
+    def restore(self, image_batch, perm_index_batch):
+        if image_batch.size()[0] == 0:
+            raise Exception("Image batch cannot be empty")
+
+        restored_image_batch = np.zeros(image_batch[0].size())
+        piece_size = image_batch[0].size()[1] // 3
+
+        for b in range(len(image_batch)):
+            permutation = self.permutations[perm_index_batch[b]]
+            for n in range(9):
+                i_start = permutation[n] // 3 * piece_size
+                j_start = permutation[n] % 3 * piece_size
+                i_start_new = n // 3 * piece_size
+                j_start_new = n % 3 * piece_size
+                restored_image_batch[b, :, i_start_new : i_start_new + piece_size, j_start_new : j_start_new + piece_size] = \
+                    image_batch[b, :, i_start : i_start + piece_size, j_start : j_start + piece_size]
+        return restored_image_batch
+
 
 
 class Synapse_dataset(Dataset):
